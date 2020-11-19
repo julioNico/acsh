@@ -35,4 +35,7 @@ void execute_background(char*, char**, pid_t);
 // Execução de uma linha de comando
 void execute_cmd(char*);
 
+// Execução de uma linha de comando
+void execute_cmd(char*);
+
 #endif

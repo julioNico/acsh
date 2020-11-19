@@ -17,6 +17,21 @@ Queue *Groups;
 int active = 0;
 
 
+// Tratamento dos Sinal Ctrl+C
+static void end_handler_C(int signal) {
+    printf("Não adianta me enviar o sinal por Ctrl-C. Estou vacinado!!\n");
+}
+
+// Tratamento dos Sinal Ctrl+Barra
+static void end_handler_B(int signal) {
+    printf("Não adianta me enviar o sinal por Ctrl-\\ . Estou vacinado!!\n");
+}
+// Tratamento dos Sinal Ctrl+Z
+static void end_handler_Z(int signal) {
+    printf("Não adianta me enviar o sinal por Ctrl-Z . Estou vacinado!!\n");
+}
+
+
 // Tratamento dos comandos, removendo caracteres indesejáveis
 static int parse(char *line, char **argv, int nmax) {
     int i = 0;
@@ -128,4 +143,14 @@ void execute_cmd(char *cmd) {
         }
         free(commands[i]);
     }
+}
+
+int main(int argc, char *argv[]) {
+    // set handlers
+    if ((signal(SIGINT, end_handler_C) == SIG_ERR) || (signal(SIGQUIT, end_handler_B) ==  SIG_ERR) || (signal(SIGTSTP, end_handler_Z) == SIG_ERR)) {
+        printf("Error while setting a signal handler\n");
+        exit(EXIT_FAILURE);
+    }   
+    while (1) { } // infinite loop
+    return 0;  
 }
