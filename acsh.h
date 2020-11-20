@@ -27,10 +27,10 @@ void wait_command(char*);
 int get_commands(char*, char**);
 
 // Execução de um comando em foreground
-void execute_foreground(char*, char**);
+void execute_foreground(char**);
 
 // Execução de um comando em background
-void execute_background(char*, char**, pid_t);
+void execute_background(char**, pid_t);
 
 // Execução de uma linha de comando
 void execute_cmd(char*);
