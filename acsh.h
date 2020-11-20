@@ -30,10 +30,7 @@ int get_commands(char*, char**);
 void execute_foreground(char*, char**);
 
 // Execução de um comando em background
-void execute_background(char*, char**, pid_t);
-
-// Execução de uma linha de comando
-void execute_cmd(char*);
+pid_t execute_background(char *command, char **params, int idGroup);
 
 // Execução de uma linha de comando
 void execute_cmd(char*);

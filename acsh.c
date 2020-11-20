@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 #include <errno.h>
+#include <signal.h>
 #include "queue.h"
 #include "acsh.h"
 
@@ -115,14 +116,29 @@ void execute_foreground(char *command, char **params) {
 }
 
 // Execução de um comando em background
-void execute_background(char *command, char **params, pid_t id_group) {
 
+pid_t execute_background(char *command, char **params, int idGroup) {
+    pid_t pid;
+    if((pid = fork()) < 0) // cria um processo filho
+        perror("*** ERROR: forking child process failed\n");
+    else if(pid == 0) { // para os processos filhos
+        if(idGroup < 0) idGroup = 0; // se o idGroup < 0 entao este é o lider, pgid sera o seu pid
+
+        if(setpgid(0, idGroup) == -1)
+            perror("*** ERROR: failed to set group"); // seta o pgid para pertencer ao grupo dado
+        else if(execvp(*params, params) < 0) // executa o comando
+            perror("*** ERROR: exec failed\n");
+    }
+
+    // enqueue(PIDs, pid); // guarda o pid do processo criado
+    return pid;
 }
 
 // Execução de uma linha de comando
 void execute_cmd(char *cmd) {
-    size_t i, j;
+    size_t i;
     int m, n;
+    pid_t gid; 
     char *commands[MAX_COMMANDS];
     char *params[MAX_COMMAND_PARAM+2];
 
@@ -140,12 +156,15 @@ void execute_cmd(char *cmd) {
         }
         else {
 
+            if(i == 0) gid = execute_background(commands[i], params, -1);
+            else execute_background(commands[i], params, gid);
+
         }
         free(commands[i]);
     }
 }
 
-int main(int argc, char *argv[]) {
+int sinais(int argc, char *argv[]) {
     // set handlers
     if ((signal(SIGINT, end_handler_C) == SIG_ERR) || (signal(SIGQUIT, end_handler_B) ==  SIG_ERR) || (signal(SIGTSTP, end_handler_Z) == SIG_ERR)) {
         printf("Error while setting a signal handler\n");
@@ -154,3 +173,5 @@ int main(int argc, char *argv[]) {
     while (1) { } // infinite loop
     return 0;  
 }
+
+
