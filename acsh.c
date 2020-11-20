@@ -13,8 +13,6 @@
 
 // PIDs
 Queue *PIDs;
-// Groups
-Queue *Groups;
 
 // Variável global indicando se a asch está ativa
 int active = 0;
@@ -71,6 +69,8 @@ int get_commands(char *cmd, char **commands) {
 // Separar parametros a partir de um comando
 // Note que o último parâmetro será NULL
 static int get_params(char *command, char **params) {
+    if(!command)
+        return 0;
     int n = parse(command, params, MAX_COMMAND_PARAM+3);
     params[n] = NULL; // último parametro é nulo, de acordo com a função execvp
     return n;
@@ -79,12 +79,18 @@ static int get_params(char *command, char **params) {
 // Comandos internos
 // Comparação com o primeiro comando recebido
 static int internal_treatment(char **params) {
+    if(!params[0])
+        return 0;
+
     if(strcmp(params[0], "cd") == 0) {
         if(chdir(params[1]) < 0)
             perror("*** ERROR: cd failed\n");
     }
-    else if(strcmp(params[0], "exit") == 0) // finalizar os outros processos
+    else if(strcmp(params[0], "exit") == 0) {
+        while(!Queue_empty(PIDs)) // finalizar os outros processos
+            kill(dequeue(PIDs), SIGKILL);
         turn_off();
+    }
     else
         return 0;
     return 1;
@@ -105,13 +111,11 @@ void execute_foreground(char **params) {
 }
 
 // Execução de um comando em background
-void execute_background(char **params, pid_t pid_group) {
+void execute_background(char **params) {
     pid_t pid;
     if((pid = fork()) < 0) // cria um processo filho
         perror("*** ERROR: forking child process failed\n");
     else if(pid == 0) { // para os processos filhos
-        if(setpgid(pid, pid_group) == -1) // seta o pgid para pertencer ao pid_group
-            perror("*** ERROR: failed to set group");
         if(execvp(*params, params) < 0) // executa o comando
             perror("*** ERROR: exec failed\n");
     }
@@ -120,59 +124,48 @@ void execute_background(char **params, pid_t pid_group) {
 // Execução de uma linha de comando
 void execute_cmd(char *cmd) {
     size_t i = 0;
-    int m, n;
-    int fd[2];
+    pid_t pid;
+    int status;
+    int m, n, 
+        first_foreground = 0; // primeiro processo é em foreground?
     char *commands[MAX_COMMANDS];
     char *params[MAX_COMMAND_PARAM+2];
-    pid_t pid, gid;
-
-    if(pipe(fd) < 0) // Failed to create a pipe
-        perror("*** ERROR: failed to create a pipe");
 
     n = get_commands(cmd, commands); // separação dos comandos
-
-    // First command
-    m = get_params(commands[i], params);
+    m = get_params(commands[0], params); // separação dos parâmetros dos comandos
+    // Internal commands
     if(n == 1 && internal_treatment(params)) { // cd ou exit?
-        free(commands[i]);
+        free(commands[0]);
         return;
     }
-    if(*params[m-1] == '%') { // foreground
+
+    if(*params[m-1] == '%') {
         params[m-1] = NULL;
-        execute_foreground(params);
+        first_foreground = 1;
+    }
+    if((pid = fork()) < 0) // cria o primeiro processo
+        perror("*** ERROR: forking child process failed\n");
+    
+    if(pid == 0) { // primeiro processo
+        setsid(); // altera a sessão
+        if(execvp(*params, params) < 0) // executa o primeiro processo
+            perror("*** ERROR: exec failed\n");
     }
     else {
-        if((pid = fork()) < 0) // cria um processo filho
-            perror("*** ERROR: forking child process failed\n");
-        else if(pid == 0) { // para os processos filhos
-            if(setpgid(0, 0) == -1)
-                perror("*** ERROR: failed to set group"); // seta o pgid para pertencer ao grupo dado
+        if(first_foreground)
+            while(wait(&status) != pid); // aguarda o comando ser completo
 
-            // Send the pgdi by pipes
-            gid = getpgid(pid);
-            close(fd[READ]);
-		    write(fd[WRITE], &gid, sizeof(pid_t));
+        enqueue(PIDs, pid); // enfileiramento dos processos principais
 
-            if(execvp(*params, params) < 0) // executa o comando
-                perror("*** ERROR: exec failed\n");
-            return;
-        }
-    }
+        for(i = 1; i < n; i++) { // demais processos
+            m = get_params(commands[i++], params);
 
-    // Rest of commands
-    for(i = 1; i < n; i++) {
-        m = get_params(commands[i], params); // separação dos parâmetros dos comandos
-        if(*params[m-1] == '%') { // foreground
-            params[m-1] = NULL;
-            execute_foreground(params);
-            return;
+            if(*params[m-1] == '%') { // foreground
+                params[m-1] = NULL;
+                execute_foreground(params);
+            }
+            else // background
+                execute_background(params);
         }
-        else {
-            close(fd[WRITE]);
-            read(fd[READ], &gid, sizeof(pid_t)); // value of pgid group
-            printf("%d\n", gid);
-            execute_background(params, gid);
-        }
-        free(commands[i]);
     }
 }
