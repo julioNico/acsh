@@ -1,5 +1,5 @@
 all:
-	gcc -g -Wall *.c
+	gcc -g -Wall *.c -o acsh
 
 clean:
-	rm -f *.o a.out
+	rm -f *.o acsh
