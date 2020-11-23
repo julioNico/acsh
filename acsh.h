@@ -35,4 +35,6 @@ int get_commands(char*, char**);
 // Execução de uma linha de comando
 void execute_cmd(char*);
 
+int sinais();
+
 #endif

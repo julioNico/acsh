@@ -4,12 +4,14 @@
 
 
 int main( ) {
+    
     char cmd[MAX_BUF];
+    sinais();
     turn_on();
-
-    while(is_active()) {
+    while(is_active()) {            
         wait_command(cmd); // leitura
         execute_cmd(cmd); // execução
     }
+
     return 0;
 }
