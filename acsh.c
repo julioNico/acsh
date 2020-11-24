@@ -17,18 +17,13 @@ Queue *PIDs;
 // Variável global indicando se a asch está ativa
 int active = 0;
 
-// Variável global indicando quantidade de processos em backgroud
-int count_bg = 0;
-
-// Variável global indicando se há processos em foreground
-int status_fg = -1;
-
+// Variável global indicando o valor do pid dos processor gerados em background.
 pid_t grupoFilho;
 
-// Tratamento dos Sinal SIGUSR1
+// Tratamento dos Sinal SIGUSR1 para matar processos aglomerados.
 void end_handler_SIGUSR1(int signal)
 {
-    kill(grupoFilho, SIGKILL);
+    kill(getpgid(getpid()), SIGKILL); //vai matar todos os processos com o mesmo grupo do filho.
 }   
 // Tratamento dos Sinal Ctrl+C
 void end_handler_C(int signal)
@@ -86,6 +81,7 @@ int is_active()
 
 void wait_command(char *cmd)
 {
+    
     fputs("acsh> ", stdout);
     fgets(cmd, MAX_BUF, stdin);
 }
@@ -142,11 +138,13 @@ void execute_foreground(char **params)
 {
     pid_t pid;
     int status;
+    signal(SIGINT, SIG_IGN);
+    signal(SIGQUIT, SIG_IGN);
+    signal(SIGTSTP, SIG_IGN);
     if ((pid = fork()) < 0) // cria um processo filho
         perror("*** ERROR: forking child process failed\n");
     else if (pid == 0)
     {                                    // para os processos filhos
-        status_fg = 1;
         if (execvp(*params, params) < 0) // executa o comando
             perror("*** ERROR: exec failed\n");
     }
@@ -157,17 +155,13 @@ void execute_foreground(char **params)
 
 // Execução de um comando em background
 void execute_background(char **params)
-{
+{   
+    sinais();
     pid_t pid;
     if ((pid = fork()) < 0) // cria um processo filho
         perror("*** ERROR: forking child process failed\n");
     else if (pid == 0)
-    {                                    // para os processos filhos
-        
-        if(count_bg > 1){
-            grupoFilho = getpgid(pid);
-        }
-        count_bg ++;
+    {                                    // para os processos filhos       
         if (execvp(*params, params) < 0) // executa o comando
             perror("*** ERROR: exec failed\n");
     }
@@ -197,6 +191,9 @@ void execute_cmd(char *cmd)
     {
         params[m - 1] = NULL;
         first_foreground = 1;
+        signal(SIGINT, SIG_IGN);
+        signal(SIGQUIT, SIG_IGN);
+        signal(SIGTSTP, SIG_IGN);
 
     }
     if ((pid = fork()) < 0) // cria o primeiro processo
@@ -214,12 +211,19 @@ void execute_cmd(char *cmd)
             while (wait(&status) != pid)
                 ; // aguarda o comando ser completo
 
+        else
+        {
+            sinais();
+        }
+                   
         enqueue(PIDs, pid); // enfileiramento dos processos principais
 
+        if(n > 1) 
+            (signal(SIGUSR1, end_handler_SIGUSR1));
         for (i = 1; i < n; i++)
         { // demais processos
-            m = get_params(commands[i++], params);
-
+            m = get_params(commands[i], params);
+                
             if (*params[m - 1] == '%')
             { // foreground
                 params[m - 1] = NULL;
@@ -235,19 +239,10 @@ void execute_cmd(char *cmd)
 // Função tratador de sinais.
 int sinais()
 {
-    if(count_bg > 1){
-
-        signal(SIGUSR1, end_handler_SIGUSR1);
-    }
-    if(status_fg == 1){
-        printf("\nstatus_fg: %d\n", status_fg);
-        signal(SIGINT, SIG_IGN); signal(SIGHUP, SIG_IGN); signal(SIGQUIT, SIG_IGN); signal(SIGTSTP, SIG_IGN);
-    }        
-    else if ((signal(SIGINT, end_handler_C) == SIG_ERR) || (signal(SIGQUIT, end_handler_B) == SIG_ERR) || (signal(SIGTSTP, end_handler_Z) == SIG_ERR))
-    {
-        printf("Error while setting a signal handler\n");
-        exit(EXIT_FAILURE);
-    }
-     
+    if ((signal(SIGINT, end_handler_C) == SIG_ERR) || (signal(SIGQUIT, end_handler_B) == SIG_ERR) || (signal(SIGTSTP, end_handler_Z) == SIG_ERR))
+        {
+            printf("Error while setting a signal handler\n");
+            exit(EXIT_FAILURE);
+        }
         return 0;
 }
