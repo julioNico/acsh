@@ -17,9 +17,6 @@ Queue *PIDs;
 // Variável global indicando se a asch está ativa
 int active = 0;
 
-// Variável global indicando o valor do pid dos processor gerados em background.
-pid_t grupoFilho;
-
 // Tratamento dos Sinal SIGUSR1 para matar processos aglomerados.
 void end_handler_SIGUSR1(int signal)
 {
