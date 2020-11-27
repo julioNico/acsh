@@ -20,8 +20,9 @@ int active = 0;
 // Tratamento dos Sinal SIGUSR1 para matar processos aglomerados.
 void end_handler_SIGUSR1(int signal)
 {
-    kill(getpgid(getpid()), SIGKILL); //vai matar todos os processos com o mesmo grupo do filho.
-}   
+    kill(getpid(), SIGKILL); //vai matar todos os processos com o mesmo grupo do filho.
+}
+
 // Tratamento dos Sinal Ctrl+C
 void end_handler_C(int signal)
 { 
@@ -33,6 +34,7 @@ void end_handler_B(int signal)
 {
     printf("\nNão adianta me enviar o sinal por Ctrl-\\ . Estou vacinado!!\n");
 }
+
 // Tratamento dos Sinal Ctrl+Z
 void end_handler_Z(int signal)
 {
@@ -111,6 +113,7 @@ static int get_params(char *command, char **params)
 // Comparação com o primeiro comando recebido
 static int internal_treatment(char **params)
 {
+    int pid;
     if (!params[0])
         return 0;
 
@@ -121,8 +124,11 @@ static int internal_treatment(char **params)
     }
     else if (strcmp(params[0], "exit") == 0)
     {
-        while (!Queue_empty(PIDs)) // finalizar os outros processos
-            kill(dequeue(PIDs), SIGKILL);
+        while (!Queue_empty(PIDs)) { // finalizar os outros processos
+            pid = dequeue(PIDs);
+            if (kill(pid, 0) == 0) // Se o pid existe
+                kill(pid, SIGKILL);
+        }
         turn_off();
     }
     else
@@ -146,8 +152,7 @@ void execute_foreground(char **params)
             perror("*** ERROR: exec failed\n");
     }
     else
-        while (wait(&status) != pid)
-            ; // aguarda o comando ser completo
+        while (wait(&status) != pid); // aguarda o comando ser completo
 }
 
 // Execução de um comando em background
@@ -197,26 +202,23 @@ void execute_cmd(char *cmd)
         perror("*** ERROR: forking child process failed\n");
 
     if (pid == 0)
-    {                                    // primeiro processo
-        setsid();                        // altera a sessão
+    { // primeiro processo
+        setsid(); // altera a sessão
         if (execvp(*params, params) < 0) // executa o primeiro processo
             perror("*** ERROR: exec failed\n");
     }
     else
     {
         if (first_foreground)
-            while (wait(&status) != pid)
-                ; // aguarda o comando ser completo
+            while (wait(&status) != pid); // aguarda o comando ser completo
 
         else
-        {
             sinais();
-        }
                    
         enqueue(PIDs, pid); // enfileiramento dos processos principais
 
         if(n > 1) 
-            (signal(SIGUSR1, end_handler_SIGUSR1));
+            signal(SIGUSR1, end_handler_SIGUSR1);
         for (i = 1; i < n; i++)
         { // demais processos
             m = get_params(commands[i], params);
