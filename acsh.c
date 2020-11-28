@@ -120,8 +120,7 @@ static int internal_treatment(char **params)
     {
         while (!Queue_empty(PIDs)) { // finalizar os outros processos
             pid = dequeue(PIDs);
-            if (kill(pid, 0) == 0) // Se o pid existe
-                kill(pid, SIGKILL);
+            killpg(pid, SIGKILL);
         }
         turn_off();
     }
@@ -163,10 +162,11 @@ void execute_cmd(char *cmd)
             if (execvp(*params, params) < 0)
                 perror("*** ERROR: exec failed\n");
         }
-        else
+        else {
             wait(NULL);
-        free(commands[0]);
-        return;
+            free(commands[0]);
+            return;
+        }
     }
 
     // Background único
@@ -188,6 +188,9 @@ void execute_cmd(char *cmd)
     // Múltiplos processos em background
     if ((p_controle = fork()) < 0)
         perror("*** ERROR: forking child process failed\n");
+    else if (p_controle != 0) {
+        enqueue(PIDs, p_controle);
+    }
     else if (p_controle == 0)
     {
         setsid(); // altera a sessão
@@ -198,21 +201,17 @@ void execute_cmd(char *cmd)
             if ((pid = fork()) < 0) // cria um processo filho
                 perror("*** ERROR: forking child process failed\n");
             else if (pid == 0)
-            {     
+            {
+                signal(SIGUSR1, SIG_DFL); // tratamento default do SIGUSR1
                 if (execvp(*params, params) < 0)
                     perror("*** ERROR: exec failed\n");
             }
         }
-        while (waitpid(-1, &status, 0) != -1) { // tratamento do sinal SIGUSR1 para matar processos aglomerados
-            if(status == SIGUSR1) { // vai matar todos os processos com o mesmo grupo do filho
-                killpg(getpgid(pid), SIGKILL);
-                kill(p_controle, SIGKILL);
+        while (wait(&status) != -1) { // tratamento do sinal SIGUSR1 para matar processos aglomerados
+            if(WIFSIGNALED(status) && WTERMSIG(status) == SIGUSR1) { // algum filho recebeu SIGUSR1
+                kill(p_controle, SIGKILL); // vai matar todos os processos com o mesmo grupo do filho
             }
         }
-    }
-    else {
-        enqueue(PIDs, p_controle);
-        return;
     }
 }
 
@@ -220,9 +219,9 @@ void execute_cmd(char *cmd)
 int sinais()
 {
     if ((signal(SIGINT, end_handler_C) == SIG_ERR) || (signal(SIGQUIT, end_handler_B) == SIG_ERR) || (signal(SIGTSTP, end_handler_Z) == SIG_ERR))
-        {
-            printf("Error while setting a signal handler\n");
-            exit(EXIT_FAILURE);
-        }
-        return 0;
+    {
+        printf("Error while setting a signal handler\n");
+        exit(EXIT_FAILURE);
+    }
+    return 0;
 }
