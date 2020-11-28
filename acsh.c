@@ -209,7 +209,9 @@ void execute_cmd(char *cmd)
         }
         while (wait(&status) != -1) { // tratamento do sinal SIGUSR1 para matar processos aglomerados
             if(WIFSIGNALED(status) && WTERMSIG(status) == SIGUSR1) { // algum filho recebeu SIGUSR1
-                kill(p_controle, SIGKILL); // vai matar todos os processos com o mesmo grupo do filho
+                killpg(0, SIGKILL); // vai matar todos os processos com o mesmo grupo do filho
+                // Send SIG to all processes in process group PGRP.
+                // If PGRP is zero, send SIG to all processes in the current process's process group.
             }
         }
     }
