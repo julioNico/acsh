@@ -17,12 +17,6 @@ Queue *PIDs;
 // Variável global indicando se a asch está ativa
 int active = 0;
 
-// Tratamento dos Sinal SIGUSR1 para matar processos aglomerados.
-void end_handler_SIGUSR1(int signal)
-{
-    kill(getpid(), SIGKILL); //vai matar todos os processos com o mesmo grupo do filho.
-}
-
 // Tratamento dos Sinal Ctrl+C
 void end_handler_C(int signal)
 { 
@@ -32,13 +26,13 @@ void end_handler_C(int signal)
 // Tratamento dos Sinal Ctrl+Barra
 void end_handler_B(int signal)
 {
-    printf("\nNão adianta me enviar o sinal por Ctrl-\\ . Estou vacinado!!\n");
+    printf("\nNão adianta me enviar o sinal por Ctrl-\\. Estou vacinado!!\n");
 }
 
 // Tratamento dos Sinal Ctrl+Z
 void end_handler_Z(int signal)
 {
-    printf("\nNão adianta me enviar o sinal por Ctrl-Z . Estou vacinado!!\n");
+    printf("\nNão adianta me enviar o sinal por Ctrl-Z. Estou vacinado!!\n");
 }
 
 // Tratamento dos comandos, removendo caracteres indesejáveis
@@ -136,102 +130,89 @@ static int internal_treatment(char **params)
     return 1;
 }
 
-// Execução de um comando em foreground
-void execute_foreground(char **params)
-{
-    pid_t pid;
-    int status;
-    signal(SIGINT, SIG_IGN);
-    signal(SIGQUIT, SIG_IGN);
-    signal(SIGTSTP, SIG_IGN);
-    if ((pid = fork()) < 0) // cria um processo filho
-        perror("*** ERROR: forking child process failed\n");
-    else if (pid == 0)
-    {                                    // para os processos filhos
-        if (execvp(*params, params) < 0) // executa o comando
-            perror("*** ERROR: exec failed\n");
-    }
-    else
-        while (wait(&status) != pid); // aguarda o comando ser completo
-}
-
-// Execução de um comando em background
-void execute_background(char **params)
-{   
-    sinais();
-    pid_t pid;
-    if ((pid = fork()) < 0) // cria um processo filho
-        perror("*** ERROR: forking child process failed\n");
-    else if (pid == 0)
-    {                                    // para os processos filhos       
-        if (execvp(*params, params) < 0) // executa o comando
-            perror("*** ERROR: exec failed\n");
-    }
-}
-
 // Execução de uma linha de comando
 void execute_cmd(char *cmd)
 {
     size_t i = 0;
-    pid_t pid;
-    int status;
-    int m, n,
-        first_foreground = 0; // primeiro processo é em foreground?
+    pid_t pid, p_controle;
+    int m, n, status;
     char *commands[MAX_COMMANDS];
     char *params[MAX_COMMAND_PARAM + 2];
 
-    n = get_commands(cmd, commands);     // separação dos comandos
-    m = get_params(commands[0], params); // separação dos parâmetros dos comandos
+    n = get_commands(cmd, commands); // separação dos comandos
+    m = get_params(commands[0], params); // separação dos parâmetros do primeiro comando
+
     // Internal commands
     if (n == 1 && internal_treatment(params))
-    { // cd ou exit?
+    {
         free(commands[0]);
         return;
     }
 
-    if (*params[m - 1] == '%')
+    // Foreground
+    if (n == 1 && *params[m - 1] == '%')
     {
         params[m - 1] = NULL;
-        first_foreground = 1;
         signal(SIGINT, SIG_IGN);
         signal(SIGQUIT, SIG_IGN);
         signal(SIGTSTP, SIG_IGN);
-
-    }
-    if ((pid = fork()) < 0) // cria o primeiro processo
-        perror("*** ERROR: forking child process failed\n");
-
-    if (pid == 0)
-    { // primeiro processo
-        setsid(); // altera a sessão
-        if (execvp(*params, params) < 0) // executa o primeiro processo
-            perror("*** ERROR: exec failed\n");
-    }
-    else
-    {
-        if (first_foreground)
-            while (wait(&status) != pid); // aguarda o comando ser completo
-
-        else
-            sinais();
-                   
-        enqueue(PIDs, pid); // enfileiramento dos processos principais
-
-        if(n > 1) 
-            signal(SIGUSR1, end_handler_SIGUSR1);
-        for (i = 1; i < n; i++)
-        { // demais processos
-            m = get_params(commands[i], params);
-                
-            if (*params[m - 1] == '%')
-            { // foreground
-                params[m - 1] = NULL;
-                execute_foreground(params);
-                
-            }
-            else // background
-                execute_background(params);
+        if ((pid = fork()) < 0)
+            perror("*** ERROR: forking child process failed\n");
+        else if (pid == 0)
+        {
+            if (execvp(*params, params) < 0)
+                perror("*** ERROR: exec failed\n");
         }
+        else
+            wait(NULL);
+        free(commands[0]);
+        return;
+    }
+
+    // Background único
+    if(n == 1) {
+        if ((pid = fork()) < 0)
+            perror("*** ERROR: forking child process failed\n");
+        else if (pid == 0)
+        {
+            signal(SIGUSR1, SIG_IGN); // ignorando o SIGUSR1
+            setsid(); // altera a sessão
+            if (execvp(*params, params) < 0)
+                perror("*** ERROR: exec failed\n");
+        }
+        else
+            enqueue(PIDs, pid);
+        return;
+    }
+
+    // Múltiplos processos em background
+    if ((p_controle = fork()) < 0)
+        perror("*** ERROR: forking child process failed\n");
+    else if (p_controle == 0)
+    {
+        setsid(); // altera a sessão
+        sinais(); // tratamento dos sinais
+        for (i = 0; i < n; i++)
+        {
+            if(i != 0) m = get_params(commands[i], params);
+            if ((pid = fork()) < 0) // cria um processo filho
+                perror("*** ERROR: forking child process failed\n");
+            else if (pid == 0)
+            {     
+                if (execvp(*params, params) < 0)
+                    perror("*** ERROR: exec failed\n");
+            }
+        }
+        while (waitpid(-1, &status, 0) != -1) { // tratamento do sinal SIGUSR1 para matar processos aglomerados
+            if(status == SIGUSR1) { // vai matar todos os processos com o mesmo grupo do filho
+                killpg(getpgid(pid), SIGKILL);
+                kill(p_controle, SIGKILL);
+            }
+        }
+    }
+    else {
+        enqueue(PIDs, p_controle);
+        return;
     }
 }
 
